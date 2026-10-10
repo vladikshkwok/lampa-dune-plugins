@@ -1,0 +1,3 @@
+#EXTM3U
+#EXTINF:-1,Lampa
+plugin_launcher://{name=lampa_dune_bridge}{action_id=play}

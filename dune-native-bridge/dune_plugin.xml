@@ -1,0 +1,18 @@
+<dune_plugin>
+  <name>lampa_dune_bridge</name>
+  <caption>Lampa: обложки и информация</caption>
+  <type>php</type>
+  <params><program>main.php</program></params>
+  <version>1.0.1</version><version_index>2</version_index>
+  <entry_points>
+    <entry_point>
+      <parent_media_url>root://applications</parent_media_url>
+      <media_url>play</media_url><caption>Lampa: последнее видео</caption>
+      <icon_url>plugin_file:///icon.png</icon_url>
+      <actions><key_enter><type>plugin_handle_user_input</type><params><command>play</command></params></key_enter></actions>
+    </entry_point>
+  </entry_points>
+  <public_actions>
+    <action id="play"><type>plugin_handle_user_input</type><params><command>play</command></params></action>
+  </public_actions>
+</dune_plugin>

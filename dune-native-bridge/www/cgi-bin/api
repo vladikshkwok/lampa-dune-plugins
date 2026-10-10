@@ -1,0 +1,9 @@
+#!/bin/sh
+# Dune's run_plugin_cgi invokes this file through sh, even on Android 11.
+prefix="${FS_PREFIX:-/data/data/com.dunehd.app}"
+export FS_PREFIX="$prefix"
+export LD_LIBRARY_PATH="$prefix/firmware/lib:$prefix/lib:/system/dunehd/firmware/lib:/system/lib:${LD_LIBRARY_PATH}"
+# PHP CGI honours SCRIPT_FILENAME over -f when REQUEST_METHOD is present.
+export SCRIPT_FILENAME="${PLUGIN_CGI_DIR:-$(dirname "$0")}/api.php"
+export REDIRECT_STATUS=200
+exec "$prefix/firmware_ext/php/php-cgi" -d cgi.force_redirect=0
