@@ -5,3 +5,10 @@ dist/
 .env
 *.local
 *.log
+
+# Local tools and generated files
+.idea/
+.serena/
+.pytest_cache/
+.DS_Store
+Thumbs.db
