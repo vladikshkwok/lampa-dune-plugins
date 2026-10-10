@@ -10,13 +10,24 @@
 
 ## Установка
 
-Скачайте `lampa-dune-kit.zip` из [Releases](https://github.com/vladikshkwok/lampa-dune-plugins/releases). Репозиторий приватный: для скачивания нужен доступ к нему.
+Для сохранения прогресса добавьте в **Lampa → Настройки → Расширения / Плагины** ссылку:
+
+```text
+https://raw.githubusercontent.com/vladikshkwok/lampa-dune-plugins/main/plugins/dune-local-progress.js
+```
+
+Для передачи обложки и описания добавьте второй плагин:
+
+```text
+https://raw.githubusercontent.com/vladikshkwok/lampa-dune-plugins/main/plugins/dune-native-player.js
+```
+
+JS-файлы скачивать вручную не нужно. Для обложки и описания дополнительно установите нативный мост из [Releases](https://github.com/vladikshkwok/lampa-dune-plugins/releases):
 
 1. Откройте `dune_plugin_lampa_dune_bridge.zip` в файловом браузере **Dune HD**, чтобы установить нативный плагин.
-2. Разместите `plugins/dune-local-progress.js` и `plugins/dune-native-player.js` на своём сервере Lampa или статических файлов.
-3. Добавьте URL обоих файлов в **Lampa → Настройки → Плагины**. Для HTTPS-страницы используйте HTTPS-ссылки.
-4. В нативном Android-меню Lampa включите **«Удержание сокета»** и перезапустите приложение.
-5. Запускайте видео через внешний **Dune HD Player**. Информацию открывайте кнопкой **INFO**.
+2. Добавьте нужные JS-плагины по ссылкам выше. При желании их можно разместить на своём сервере.
+3. В нативном Android-меню Lampa включите **«Удержание сокета»** и перезапустите приложение.
+4. Запускайте видео через внешний **Dune HD Player**. Информацию открывайте кнопкой **INFO**.
 
 Для одного сохранения прогресса достаточно `dune-local-progress.js`; нативный ZIP и второй JS нужны для передачи карточки фильма.
 
