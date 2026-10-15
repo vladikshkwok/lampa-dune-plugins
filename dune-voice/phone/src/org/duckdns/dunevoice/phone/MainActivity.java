@@ -78,6 +78,7 @@ public final class MainActivity extends Activity {
         settings.caption("Настройки");
         systemButton = settings.secondary("", v -> { prefs.edit().putBoolean("system", !prefs.getBoolean("system", true)).apply(); showState(); });
         settings.muted("Фраза «Эй, Дюна» всегда распознаётся на телефоне. Команду после паузы точнее распознаёт системный сервис (обычно Google); если он недоступен, работает встроенная модель.");
+        settings.muted("Во время фильма микрофон автоматически выключается, включая паузы и перемотки. После выхода из плеера прослушивание возвращается. Кнопки пульта работают и во время просмотра.");
         settings.secondary("Кнопка «Эй, Дюна» в шторке", v -> addTile());
         batteryButton = settings.secondary("", v -> {
             PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
@@ -189,13 +190,15 @@ public final class MainActivity extends Activity {
 
     private void showState() {
         boolean on = running(), linked = paired();
+        boolean recording = on && prefs.getBoolean("microphone", false);
         if (prefs.getBoolean("listening", false) && !on)
             prefs.edit().putBoolean("listening", false).putString("state", "Прослушивание остановлено системой. Нажмите микрофон.").apply();
-        if (painted == null || on != painted) { Screen.paintToggle(screen, mic, on); painted = on; }
+        if (painted == null || recording != painted) { Screen.paintToggle(screen, mic, recording); painted = recording; }
+        mic.setContentDescription(on ? recording ? "Выключить микрофон" : "Микрофон на паузе. Нажмите, чтобы выключить голосовой режим" : "Включить голосовой режим");
         String state = prefs.getString("state", "");
         micState.setText(on ? (state.isEmpty() ? "Слушаю «Эй, Дюна»" : state) : !linked ? "Подключите приставку" : state.isEmpty() || state.startsWith("Слушаю") ? "Микрофон выключен" : state);
         String heard = ListeningService.live;
-        live.setText(on ? (heard.isEmpty() ? "Нажмите, чтобы выключить" : "Слышу: " + heard) : linked ? "Нажмите, чтобы слушать «Эй, Дюна»" : "");
+        live.setText(on ? (!recording ? "Нажмите, чтобы выключить голосовой режим" : heard.isEmpty() ? "Нажмите, чтобы выключить" : "Слышу: " + heard) : linked ? "Нажмите, чтобы слушать «Эй, Дюна»" : "");
         remote.visible(linked);
         String name = prefs.getString("name", ""), ip = prefs.getString("address", "");
         if (linked) device.set(Screen.OK, (name.isEmpty() ? "Dune" : name) + "  ·  " + ip); else device.set(Screen.WARN, "Приставка не подключена");

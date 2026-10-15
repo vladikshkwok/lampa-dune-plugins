@@ -52,6 +52,19 @@ public final class CoreTest {
         ResultGate results = new ResultGate(); long a = results.start(); long b = results.start();
         ok(!results.claim(a)); ok(results.claim(b)); ok(!results.claim(b));
         a = results.start(); results.cancel(); ok(!results.claim(a));
+        ViewingGate viewing = new ViewingGate();
+        ok(!viewing.allowsMicrophone()); // No brief microphone capture at startup during a film.
+        viewing.sample(null, 0); ok(!viewing.allowsMicrophone());
+        viewing.sample(false, 100); viewing.sample(false, 5099); ok(!viewing.allowsMicrophone());
+        viewing.sample(false, 5100); ok(viewing.allowsMicrophone());
+        viewing.sample(true, 5200); ok(!viewing.allowsMicrophone());
+        viewing.sample(false, 5300); viewing.sample(null, 5400);
+        viewing.sample(false, 11000); ok(!viewing.allowsMicrophone()); // Unknown breaks exit confirmation.
+        viewing.sample(true, 12000); viewing.sample(false, 13000);
+        viewing.sample(true, 18000); ok(!viewing.allowsMicrophone()); // Transient idle/seek is not an exit.
+        viewing.sample(null, 25000); ok(!viewing.allowsMicrophone()); // Lost LAN never unmutes.
+        viewing.sample(false, 30000); viewing.sample(false, 35000); ok(viewing.allowsMicrophone());
+        viewing.sample(null, 36000); ok(viewing.allowsMicrophone()); // An idle network blip preserves mode.
         ok(Endpoint.fromAddress("192.168.1.20").equals("http://192.168.1.20:18766"));
         for (String bad : new String[]{"8.8.8.8", "192.168.1.1:80", "localhost", "192.168.1.1/path", "http://192.168.1.1", "192.168.01.1", "172.32.1.1", "192.168.1.256"}) {
             boolean rejected = false; try { Endpoint.fromAddress(bad); } catch (IllegalArgumentException e) { rejected = true; } ok(rejected);

@@ -20,6 +20,11 @@ public final class GatewayProbe extends Instrumentation {
             String code = gateway.openPairing();
             String token = Net.post(endpoint, "/pair", "", new JSONObject().put("code", code)).getString("token");
             if (!token.matches("[A-Za-z0-9_-]{43}")) throw new AssertionError("token format");
+            boolean playbackRejected = false;
+            try { Net.post(endpoint, "/playback", "", new JSONObject()); } catch (Exception expected) { playbackRejected = true; }
+            if (!playbackRejected) throw new AssertionError("anonymous playback status accepted");
+            JSONObject playback = Net.post(endpoint, "/playback", token, new JSONObject());
+            if (!(playback.opt("known") instanceof Boolean)) throw new AssertionError("missing playback status");
             boolean rejected = false;
             try { Net.post(endpoint, "/pair", "", new JSONObject().put("code", code)); } catch (Exception expected) { rejected = true; }
             if (!rejected) throw new AssertionError("reused pairing code");
@@ -32,6 +37,9 @@ public final class GatewayProbe extends Instrumentation {
             gateway.disconnectPhone(); rejected = false;
             try { Net.post(endpoint, "/command", token, invalid); } catch (Exception expected) { rejected = true; }
             if (!rejected) throw new AssertionError("disconnected token accepted");
+            rejected = false;
+            try { Net.post(endpoint, "/playback", token, new JSONObject()); } catch (Exception expected) { rejected = true; }
+            if (!rejected) throw new AssertionError("disconnected playback token accepted");
             result.putString("result", "PASS LAN pairing, single-use code, authenticated parsing, disconnect; no device commands");
             status = -1;
         } catch (Throwable error) {

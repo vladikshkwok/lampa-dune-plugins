@@ -17,9 +17,11 @@ public final class ListeningTile extends TileService {
     }
     private void update() {
         Tile tile = getQsTile(); if (tile == null) return;
-        boolean active = getSharedPreferences("phone", 0).getBoolean("listening", false) && ListeningService.isRunning(this);
+        SharedPreferences prefs = getSharedPreferences("phone", 0);
+        boolean enabled = prefs.getBoolean("listening", false) && ListeningService.isRunning(this);
+        boolean active = enabled && prefs.getBoolean("microphone", false);
         tile.setLabel("Эй, Дюна"); tile.setState(active ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
-        if (Build.VERSION.SDK_INT >= 29) tile.setSubtitle(active ? "Микрофон включён" : "Микрофон выключен");
+        if (Build.VERSION.SDK_INT >= 29) tile.setSubtitle(active ? "Микрофон включён" : enabled ? "Микрофон на паузе" : "Микрофон выключен");
         tile.updateTile();
     }
     @Override public void onClick() {

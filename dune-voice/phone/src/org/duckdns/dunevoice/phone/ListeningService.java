@@ -26,7 +26,9 @@ public final class ListeningService extends Service implements RecognitionListen
     static volatile String live = "";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService monitor = Executors.newSingleThreadExecutor();
     private final WakeGate wake = new WakeGate();
+    private final ViewingGate viewing = new ViewingGate();
     private Model model;
     private Recognizer recognizer;
     private SpeechService microphone;
@@ -34,7 +36,22 @@ public final class ListeningService extends Service implements RecognitionListen
     private PowerManager.WakeLock wakeLock;
     private volatile boolean closing;
     private boolean started, busy, systemFailed;
+    private volatile long captureGeneration;
     private long lastCommand;
+    private final Runnable checkPlayback = new Runnable() { public void run() { monitor.execute(() -> {
+        Boolean active = null;
+        try { active = Remote.viewing(ListeningService.this); } catch (Exception unavailable) { /* Keep the last safe state. */ }
+        Boolean sample = active;
+        main.post(() -> {
+            if (closing) return;
+            viewing.sample(sample, SystemClock.elapsedRealtime());
+            if (!viewing.allowsMicrophone()) {
+                suspendCapture();
+                state(Boolean.TRUE.equals(sample) ? "Просмотр: микрофон выключен до выхода из плеера" : sample == null ? "Микрофон выключен: нет статуса плеера. Проверьте связь и обновление Dune." : "Микрофон выключен. Подтверждаю выход из плеера…");
+            } else if (model != null && microphone == null && system == null) resumeCapture();
+            main.postDelayed(checkPlayback, 3000);
+        });
+    }); } };
     static boolean isRunning(Context context) {
         ActivityManager manager = (ActivityManager) context.getSystemService(ACTIVITY_SERVICE);
         for (ActivityManager.RunningServiceInfo service : manager.getRunningServices(50))
@@ -50,7 +67,11 @@ public final class ListeningService extends Service implements RecognitionListen
         getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel("listening", "Голосовая активация", NotificationManager.IMPORTANCE_LOW));
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION, notification("Подготавливаю русскую модель…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
         else startForeground(NOTIFICATION, notification("Подготавливаю русскую модель…"));
+        getSharedPreferences("phone", 0).edit().putBoolean("microphone", false).putBoolean("viewing", true).apply();
         state("Подготавливаю русскую модель…");
+        wakeLock = ((PowerManager) getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "dunevoice:listening");
+        wakeLock.acquire(); // Also receives the end-of-viewing state with the screen off.
+        main.post(checkPlayback);
         io.execute(() -> {
             try {
                 LibVosk.setLogLevel(LogLevel.WARNINGS);
@@ -58,12 +79,9 @@ public final class ListeningService extends Service implements RecognitionListen
                 main.post(() -> {
                     if (closing) { loaded.close(); return; }
                     try {
-                        model = loaded; recognizer = new Recognizer(model, 16000.0f);
-                        microphone = new SpeechService(recognizer, 16000.0f);
-                        wakeLock = ((PowerManager) getSystemService(POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "dunevoice:listening");
-                        wakeLock.acquire();
-                        if (!microphone.startListening(this)) throw new IllegalStateException("microphone busy");
-                        state("Слушаю «Эй, Дюна»");
+                        model = loaded;
+                        if (viewing.allowsMicrophone()) resumeCapture();
+                        else state("Микрофон выключен. Проверяю состояние плеера…");
                     } catch (Exception error) { state("Не удалось включить микрофон. Откройте приложение и попробуйте снова."); stopSelf(); }
                 });
             } catch (Throwable error) {
@@ -82,15 +100,46 @@ public final class ListeningService extends Service implements RecognitionListen
             .setVisibility(Notification.VISIBILITY_PRIVATE).addAction(new Notification.Action.Builder(null, "Выключить", stop).build()).build();
     }
     private void state(String text) {
-        getSharedPreferences("phone", 0).edit().putString("state", text).putBoolean("listening", !closing && started).apply();
+        SharedPreferences prefs = getSharedPreferences("phone", 0);
+        if (text.equals(prefs.getString("state", "")) && prefs.getBoolean("listening", false) == (!closing && started)
+            && prefs.getBoolean("viewing", false) == !viewing.allowsMicrophone()) return;
+        prefs.edit().putString("state", text).putBoolean("listening", !closing && started)
+            .putBoolean("viewing", !viewing.allowsMicrophone()).apply();
         if (!closing && started) getSystemService(NotificationManager.class).notify(NOTIFICATION, notification(text));
+    }
+    private boolean accepts(long generation) { return !closing && viewing.allowsMicrophone() && generation == captureGeneration; }
+    private void suspendCapture() {
+        ++captureGeneration; wake.reset(); live = ""; main.removeCallbacks(armedTimeout);
+        SpeechRecognizer oldSystem = system; system = null;
+        if (oldSystem != null) { try { oldSystem.destroy(); } catch (RuntimeException ignored) {} }
+        if (microphone != null) { microphone.stop(); microphone.shutdown(); microphone = null; }
+        if (recognizer != null) { recognizer.close(); recognizer = null; }
+        getSharedPreferences("phone", 0).edit().putBoolean("microphone", false).apply();
+    }
+    private void resumeCapture() {
+        if (closing || !viewing.allowsMicrophone() || model == null) return;
+        try {
+            long generation = ++captureGeneration;
+            recognizer = new Recognizer(model, 16000.0f);
+            microphone = new SpeechService(recognizer, 16000.0f);
+            RecognitionListener listener = new RecognitionListener() {
+                public void onResult(String value) { if (accepts(generation)) ListeningService.this.onResult(value); }
+                public void onPartialResult(String value) { if (accepts(generation)) ListeningService.this.onPartialResult(value); }
+                public void onFinalResult(String value) { /* Never execute at shutdown. */ }
+                public void onError(Exception error) { if (accepts(generation)) ListeningService.this.onError(error); }
+                public void onTimeout() { if (accepts(generation)) ListeningService.this.onTimeout(); }
+            };
+            if (!microphone.startListening(listener)) throw new IllegalStateException("microphone busy");
+            getSharedPreferences("phone", 0).edit().putBoolean("microphone", true).apply();
+            state("Слушаю «Эй, Дюна»");
+        } catch (Exception error) { state("Не удалось включить микрофон. Откройте приложение и попробуйте снова."); stopSelf(); }
     }
     private void buzz(int ms) {
         try { ((Vibrator) getSystemService(VIBRATOR_SERVICE)).vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)); }
         catch (RuntimeException ignored) {}
     }
     @Override public void onResult(String hypothesis) {
-        if (closing || system != null) return;
+        if (closing || !viewing.allowsMicrophone() || system != null) return;
         String text;
         try { text = new JSONObject(hypothesis).optString("text", ""); } catch (Exception e) { return; }
         if (!text.isEmpty()) live = text;
@@ -117,9 +166,11 @@ public final class ListeningService extends Service implements RecognitionListen
         microphone.stop(); // the system recognizer needs the microphone to itself
         state("Слушаю команду…");
         try {
+            long generation = captureGeneration;
             system = SpeechRecognizer.createSpeechRecognizer(this);
             system.setRecognitionListener(new android.speech.RecognitionListener() {
                 public void onResults(Bundle bundle) {
+                    if (!accepts(generation) || system == null) return;
                     ArrayList<String> choices = bundle.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     String text = choices == null || choices.isEmpty() ? "" : choices.get(0);
                     endSystem(false);
@@ -127,12 +178,14 @@ public final class ListeningService extends Service implements RecognitionListen
                     else { live = text; execute(text); }
                 }
                 public void onError(int error) {
+                    if (!accepts(generation) || system == null) return;
                     boolean silence = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT;
                     endSystem(!silence);
                     if (silence) state("Не расслышал команду. Скажите «Эй, Дюна» ещё раз.");
                     else { wake.arm(SystemClock.elapsedRealtime()); state("Слушаю команду…"); main.postDelayed(armedTimeout, 8000); }
                 }
                 public void onPartialResults(Bundle bundle) {
+                    if (!accepts(generation) || system == null) return;
                     ArrayList<String> values = bundle.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     if (values != null && !values.isEmpty() && !values.get(0).isEmpty()) live = values.get(0);
                 }
@@ -154,10 +207,12 @@ public final class ListeningService extends Service implements RecognitionListen
     }
     private void endSystem(boolean failed) {
         if (failed) systemFailed = true; // until the next start; Vosk handles commands meanwhile
-        if (system != null) { try { system.destroy(); } catch (RuntimeException ignored) {} system = null; }
-        if (!closing && microphone != null && !microphone.startListening(this)) { state("Микрофон занят другим приложением. Включите прослушивание заново."); stopSelf(); }
+        // Recreate the Vosk recorder and invalidate callbacks from either old recognizer.
+        suspendCapture();
+        resumeCapture();
     }
     private void execute(String command) {
+        if (closing || !viewing.allowsMicrophone()) return;
         if (command.matches("выключи (?:микрофон|прослушивание)|перестань слушать|хватит слушать")) {
             state("Прослушивание выключено голосовой командой"); stopSelf(); return;
         }
@@ -166,30 +221,31 @@ public final class ListeningService extends Service implements RecognitionListen
         try { Commands.parse(command); }
         catch (IllegalArgumentException invalid) { state("Услышал «" + command + "» — " + invalid.getMessage()); return; }
         busy = true; lastCommand = now; state("Услышал «" + command + "». Передаю на Dune…");
+        long generation = captureGeneration;
         io.execute(() -> {
             String reply;
+            if (!accepts(generation)) { main.post(() -> busy = false); return; }
             try { reply = "«" + command + "» → " + Remote.send(this, command); buzz(30); }
             catch (Exception error) { reply = "«" + command + "» → " + Remote.explain(error); }
             String result = reply;
-            main.post(() -> { busy = false; if (!closing) state(result); });
+            main.post(() -> { busy = false; if (accepts(generation)) state(result); });
         });
     }
     @Override public void onPartialResult(String hypothesis) {
+        if (closing || !viewing.allowsMicrophone()) return;
         try { String text = new JSONObject(hypothesis).optString("partial", ""); if (!text.isEmpty()) live = text; } catch (Exception ignored) {}
     }
     @Override public void onFinalResult(String text) { /* final at shutdown must not execute a command */ }
     @Override public void onError(Exception error) { if (!closing) { state("Микрофон недоступен. Включите прослушивание заново."); stopSelf(); } }
     @Override public void onTimeout() { if (!closing) stopSelf(); }
     @Override public void onDestroy() {
-        closing = true; wake.reset(); live = "";
-        main.removeCallbacks(armedTimeout);
-        if (system != null) { try { system.destroy(); } catch (RuntimeException ignored) {} system = null; }
-        if (microphone != null) { microphone.stop(); microphone.shutdown(); }
-        if (recognizer != null) recognizer.close(); if (model != null) model.close();
+        closing = true;
+        main.removeCallbacks(checkPlayback); suspendCapture();
+        if (model != null) model.close();
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
-        io.shutdownNow();
+        io.shutdownNow(); monitor.shutdownNow();
         SharedPreferences prefs = getSharedPreferences("phone", 0);
-        SharedPreferences.Editor update = prefs.edit().putBoolean("listening", false);
+        SharedPreferences.Editor update = prefs.edit().putBoolean("listening", false).putBoolean("microphone", false).putBoolean("viewing", false);
         if (prefs.getString("state", "").startsWith("Слушаю")) update.putString("state", "Прослушивание выключено");
         update.apply();
         stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy();

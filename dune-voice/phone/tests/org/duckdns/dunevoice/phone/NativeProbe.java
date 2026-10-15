@@ -11,10 +11,12 @@ import org.duckdns.dunevoice.core.WakeGate;
 /** Included only by `build.sh phone probe`, never in the distributed APK. */
 public final class NativeProbe extends Instrumentation {
     private boolean discovery;
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); discovery = arguments != null && "true".equals(arguments.getString("discovery")); start(); }
+    private boolean viewing;
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); discovery = arguments != null && "true".equals(arguments.getString("discovery")); viewing = arguments != null && "true".equals(arguments.getString("viewing")); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (viewing) { ViewingProbe.run(this); result.putString("result", "PASS native microphone release/resume with screen off, startup during playback, unknown/paused state, manual stop; authenticated status only"); finish(-1, result); return; }
             if (discovery) { DiscoveryProbe.run(this); result.putString("result", "PASS mDNS discovery, resolved IPv4, HTTP identity validation, lifecycle cancellation; no pairing or commands"); finish(-1, result); return; }
             LibVosk.setLogLevel(LogLevel.WARNINGS);
             String acoustic = "";

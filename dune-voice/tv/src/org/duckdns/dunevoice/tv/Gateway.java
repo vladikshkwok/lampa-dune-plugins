@@ -19,6 +19,7 @@ final class Gateway implements AutoCloseable {
     private final SharedPreferences prefs;
     private final Announcement announcement;
     private final PairGate pairing = new PairGate();
+    private final PlaybackStatus playback = new PlaybackStatus();
     private final SecureRandom random = new SecureRandom();
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(2, 2, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(4));
     private final LinkedHashMap<String, JSONObject> completed = new LinkedHashMap<>();
@@ -91,7 +92,7 @@ final class Gateway implements AutoCloseable {
             if (length < 2 || length > 2048) { reply(socket, 400, error("Некорректный запрос")); return; }
             byte[] bytes = new byte[length]; int read = 0;
             while (read < length) { if (SystemClock.elapsedRealtime() >= deadline) throw new IOException("timeout"); int count = input.read(bytes, read, length - read); if (count < 0) throw new EOFException(); read += count; }
-            if (!request.equals("POST /pair HTTP/1.1") && !request.equals("POST /command HTTP/1.1") && !request.equals("POST /discover HTTP/1.1")) { reply(socket, 404, error("Не найдено")); return; }
+            if (!request.equals("POST /pair HTTP/1.1") && !request.equals("POST /command HTTP/1.1") && !request.equals("POST /discover HTTP/1.1") && !request.equals("POST /playback HTTP/1.1")) { reply(socket, 404, error("Не найдено")); return; }
             if (headers.containsKey("origin")) { reply(socket, 403, error("Запрос отклонён")); return; }
             JSONObject body;
             try { body = new JSONObject(new String(bytes, StandardCharsets.UTF_8)); }
@@ -110,6 +111,9 @@ final class Gateway implements AutoCloseable {
             String expected = prefs.getString("token", "");
             String supplied = headers.getOrDefault("authorization", "");
             if (expected.isEmpty() || !MessageDigest.isEqual(("Bearer " + expected).getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8))) { reply(socket, 403, error("Подключите телефон заново в настройках Dune")); return; }
+            if (request.startsWith("POST /playback ")) {
+                reply(socket, 200, playback.read(context)); return;
+            }
             String id = body.optString("id", "");
             if (!id.matches("[a-zA-Z0-9-]{16,64}") || !(body.opt("text") instanceof String)) { reply(socket, 400, error("Некорректная команда")); return; }
             JSONObject result;

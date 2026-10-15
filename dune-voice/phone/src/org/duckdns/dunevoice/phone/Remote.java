@@ -12,6 +12,14 @@ import org.duckdns.dunevoice.core.Endpoint;
 /** One command to the paired Dune; returns Dune's own reply ("Ищу: …"). Call off the main thread. */
 final class Remote {
     private Remote() {}
+    static Boolean viewing(Context context) throws Exception {
+        SharedPreferences prefs = context.getSharedPreferences("phone", 0);
+        String token = prefs.getString("token", "");
+        if (token.isEmpty()) throw new IllegalStateException("Сначала подключите телефон к Dune");
+        JSONObject reply = Net.post(Endpoint.fromAddress(prefs.getString("address", "")), "/playback", token, new JSONObject());
+        if (!reply.optBoolean("known") || !(reply.opt("viewing") instanceof Boolean)) return null;
+        return reply.getBoolean("viewing");
+    }
     static String send(Context context, String text) throws Exception {
         SharedPreferences prefs = context.getSharedPreferences("phone", 0);
         String token = prefs.getString("token", "");
