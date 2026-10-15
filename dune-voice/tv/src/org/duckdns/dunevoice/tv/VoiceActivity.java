@@ -34,7 +34,7 @@ public final class VoiceActivity extends Activity implements RecognitionListener
         android.widget.ImageView icon = new android.widget.ImageView(this);
         icon.setImageResource(R.drawable.ic_voice); card.add(icon, screen.dp(88), screen.dp(8));
         message = card.label("Подключаю микрофон…", 30, Screen.TEXT, true); message.setGravity(android.view.Gravity.CENTER);
-        card.muted("«Найди фильм…» · «Пауза» · «Продолжи» · «Громче» · «Домой»").setGravity(android.view.Gravity.CENTER);
+        card.muted("«Найди фильм…» · «Найди в ютубе…» · «Пауза» · «Громче» · «Домой»").setGravity(android.view.Gravity.CENTER);
         card.quiet("Отмена", v -> finish());
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
         else listen();

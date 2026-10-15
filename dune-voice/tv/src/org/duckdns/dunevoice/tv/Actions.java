@@ -39,6 +39,24 @@ final class Actions {
         try { task.get(5, TimeUnit.SECONDS); }
         catch (ExecutionException failed) { throw failed.getCause() instanceof Exception ? (Exception) failed.getCause() : failed; }
     }
+    // Both SmartTube and the official TV app search from a VIEW of the results-page
+    // URL. SmartTube ignores ACTION_SEARCH: its IntentExtractor reads search_query
+    // only from VIEW/SEND intents (yuliskov/SmartTube, IntentExtractor.extractSearchText).
+    private static final String[] YOUTUBE_APPS = {"org.smarttube.stable", "org.smarttube.beta", "com.liskovsoft.smarttubetv.beta", "com.teamsmart.videomanager.tv", "com.google.android.youtube.tv"};
+    /** Returns the app name that was opened, or null when none is installed. Main thread. */
+    private static String youtube(Context app, String query) {
+        for (String pkg : YOUTUBE_APPS) {
+            Intent intent = query.isEmpty() ? app.getPackageManager().getLaunchIntentForPackage(pkg)
+                : new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/results?search_query=" + android.net.Uri.encode(query))).setPackage(pkg);
+            if (start(app, intent)) return pkg.equals("com.google.android.youtube.tv") ? "YouTube" : "SmartTube";
+        }
+        return null;
+    }
+    private static boolean start(Context app, Intent intent) {
+        if (intent == null) return false;
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { app.startActivity(intent); return true; } catch (ActivityNotFoundException missing) { return false; }
+    }
     static synchronized String execute(Context context, Command command) throws Exception {
         Context app = context.getApplicationContext();
         if (command.action.equals("cancel")) return "Отменено";
@@ -59,6 +77,12 @@ final class Actions {
                 app.startActivity(intent);
             });
             return command.action.equals("search") ? "Ищу: " + command.argument : "Открываю Lampa";
+        }
+        if (command.action.equals("youtube")) {
+            final String[] opened = {null};
+            mainThread(() -> opened[0] = youtube(app, command.argument));
+            if (opened[0] == null) throw new IllegalStateException("Установите SmartTube или YouTube на Dune");
+            return command.argument.isEmpty() ? "Открываю " + opened[0] : opened[0] + ": ищу " + command.argument;
         }
         if (command.action.equals("back")) {
             final boolean[] success = {false}; mainThread(() -> success[0] = RemoteKeys.back());

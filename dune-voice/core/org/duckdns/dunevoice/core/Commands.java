@@ -6,6 +6,22 @@ import java.util.regex.Pattern;
 
 public final class Commands {
     private Commands() {}
+    // Vosk writes «ютуб/ютубе»; Google usually writes «YouTube».
+    private static final String YT = "(?:ютуб[еау]?|ютьюб[еау]?|ютюб[еау]?|you ?tube|youtube)";
+    private static final Pattern YT_PREFIX = Pattern.compile("^(?:(?:дюна|dune)[, ]+)?(?:(?:найди|поищи|покажи|включи|открой|запусти|поставь)(?:те)?(?: мне)?[, ]+)?(?:в|на|во|из) " + YT + "[, ]+(?:видео |ролик |ролики )?(?:про |о |об )?", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final Pattern YT_SUFFIX = Pattern.compile("^(?:(?:найди|поищи|покажи|включи|поставь)(?:те)?(?: мне)?[, ]+)?(?:видео |ролик |ролики )?(?:про |о |об )?(.+?)[, ]+(?:в|на) " + YT + "[.!?]*$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static Command youtube(String original, String control) {
+        if (control.matches("(?:(?:открой|запусти|включи)(?: приложение)? )?" + YT)) return new Command("youtube", "");
+        String query = null;
+        Matcher m = YT_PREFIX.matcher(original);
+        if (m.find()) query = original.substring(m.end());
+        else if ((m = YT_SUFFIX.matcher(original)).matches()) query = m.group(1);
+        if (query == null) return null;
+        query = query.replaceFirst("[.!?]+$", "").trim();
+        if (query.matches("(?iu)(?:найди|поищи|покажи|включи|открой|запусти|поставь)(?:те)?(?: мне)?")) query = "";
+        if (!Pattern.compile("[\\p{L}\\p{N}]").matcher(query).find()) throw new IllegalArgumentException("Что найти в YouTube?");
+        return new Command("youtube", query);
+    }
     public static Command parse(String text) {
         if (text == null || text.length() > 300) throw new IllegalArgumentException("Слишком длинная команда");
         String original = text.trim().replaceAll("\\s+", " ");
@@ -26,6 +42,8 @@ public final class Commands {
         if (control.matches("(?:включи|разбуди)(?: дюну| dune| приставку)|проснись")) return new Command("wake", "");
         if (control.matches("(?:выключи|выключить|усыпи)(?: дюну| dune|приставку)?|режим ожидания")) return new Command("standby", "");
         if (control.matches("(?:открой|запусти|включи)(?: приложение)? (?:лампу|лампа|lampa)")) return new Command("lampa", "");
+        Command youtube = youtube(original, control);
+        if (youtube != null) return youtube;
         if (control.matches("(?:найди|поищи|покажи|поставь)(?: фильм|кино|сериал)?")) throw new IllegalArgumentException("Назовите фильм для поиска");
         Matcher prefix = Pattern.compile("^(?:(?:дюна|dune)[, ]+)?(?:пожалуйста[, ]+)?(?:найди|поищи|покажи|включи|запусти|поставь|открой|хочу посмотреть|давай посмотрим)(?:те)?[, ]+", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(original);
         String query = original;

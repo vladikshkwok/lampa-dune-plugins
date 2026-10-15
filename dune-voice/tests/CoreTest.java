@@ -18,7 +18,15 @@ public final class CoreTest {
         command("сделай потише", "quieter", ""); command("выключи звук", "mute", "");
         command("выключи дюну", "standby", ""); command("Зелёная миля", "search", "Зелёная миля");
         command("открой лампу", "lampa", "");
-        for (String bad : new String[]{"", "   ", "найди", "найди фильм", "найди !!!", "найди Дюна во встроенном поиске", new String(new char[301])}) {
+        command("найди в ютубе котиков", "youtube", "котиков");
+        command("Найди на YouTube обзор айфона", "youtube", "обзор айфона");
+        command("покажи в ютубе рецепт борща", "youtube", "рецепт борща");
+        command("найди видео про космос в ютубе", "youtube", "космос");
+        command("в ютубе Лучшие голы 2024", "youtube", "Лучшие голы 2024");
+        command("Дюна, найди в YouTube видео про Марс", "youtube", "Марс");
+        command("открой ютуб", "youtube", ""); command("YouTube", "youtube", "");
+        command("найди фильм Ютуберы", "search", "Ютуберы");
+        for (String bad : new String[]{"", "   ", "найди", "найди фильм", "найди !!!", "найди Дюна во встроенном поиске", "найди в ютубе", new String(new char[301])}) {
             boolean rejected = false; try { Commands.parse(bad); } catch (IllegalArgumentException e) { rejected = true; } ok(rejected);
         }
         WakeGate wake = new WakeGate();

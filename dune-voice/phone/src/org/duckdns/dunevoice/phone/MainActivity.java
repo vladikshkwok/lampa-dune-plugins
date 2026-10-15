@@ -45,16 +45,19 @@ public final class MainActivity extends Activity {
 
         remote = r.card();
         remote.caption("Пульт");
-        query = remote.field("Фильм или сериал", "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        query = remote.field("Фильм, сериал или видео", "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         query.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        query.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_SEARCH) { search(); return true; } return false; });
-        remote.primary("Найти в Lampa", v -> search());
+        query.setOnEditorActionListener((v, action, event) -> { if (action == EditorInfo.IME_ACTION_SEARCH) { search("найди "); return true; } return false; });
+        Screen.Box find = remote.row();
+        find.primary("Найти в Lampa", v -> search("найди ")); find.secondary("В YouTube", v -> search("найди в ютубе "));
         Screen.Box row = remote.row();
         row.secondary("Пауза", v -> send("пауза")); row.secondary("Играть", v -> send("продолжи")); row.secondary("Стоп", v -> send("стоп"));
         row = remote.row();
         row.secondary("Тише", v -> send("тише")); row.secondary("Громче", v -> send("громче")); row.secondary("Без звука", v -> send("выключи звук"));
         row = remote.row();
-        row.secondary("Назад", v -> send("назад")); row.secondary("Домой", v -> send("домой")); row.secondary("Lampa", v -> send("открой лампу"));
+        row.secondary("Назад", v -> send("назад")); row.secondary("Домой", v -> send("домой"));
+        row = remote.row();
+        row.secondary("Lampa", v -> send("открой лампу")); row.secondary("YouTube", v -> send("открой ютуб"));
         remoteReply = remote.muted(""); remoteReply.setGravity(Gravity.CENTER);
 
         Screen.Box box = r.card();
@@ -83,7 +86,7 @@ public final class MainActivity extends Activity {
 
         Screen.Box help = r.card();
         help.caption("Что сказать");
-        help.text("«Эй, Дюна, найди фильм Зелёная миля»\n«Эй, Дюна» … пауза … «покажи сериал Друзья»\n«Эй, Дюна, пауза» · «продолжи» · «стоп»\n«Эй, Дюна, громче» · «тише» · «выключи звук»\n«Эй, Дюна, домой» · «назад» · «выключи приставку»\n«Эй, Дюна, выключи микрофон»");
+        help.text("«Эй, Дюна, найди фильм Зелёная миля»\n«Эй, Дюна» … пауза … «покажи сериал Друзья»\n«Эй, Дюна, найди в ютубе обзор айфона»\n«Эй, Дюна, пауза» · «продолжи» · «стоп»\n«Эй, Дюна, громче» · «тише» · «выключи звук»\n«Эй, Дюна, домой» · «назад» · «выключи приставку»\n«Эй, Дюна, выключи микрофон»");
         help.muted("После «Эй, Дюна» телефон коротко вибрирует — тогда говорите команду. Выбор фильма и источника остаётся на телевизоре. Аудио и фразы не сохраняются; пока включено прослушивание, расходуется батарея.");
     }
 
@@ -109,10 +112,10 @@ public final class MainActivity extends Activity {
         else notice("Для «Эй, Дюна» нужно разрешение на микрофон");
     }
 
-    private void search() {
+    private void search(String prefix) {
         String title = query.getText().toString().trim();
         if (title.isEmpty()) { remoteReply.setText("Введите название"); return; }
-        send("найди " + title);
+        send(prefix + title);
     }
     private void send(String text) {
         if (!paired()) { remoteReply.setText("Сначала подключите приставку"); return; }

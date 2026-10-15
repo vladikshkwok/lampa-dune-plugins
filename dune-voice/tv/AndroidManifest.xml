@@ -10,6 +10,8 @@
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
         <package android:name="top.rootu.lampa" /><package android:name="com.dunehd.app" />
+        <package android:name="org.smarttube.stable" /><package android:name="org.smarttube.beta" /><package android:name="com.liskovsoft.smarttubetv.beta" />
+        <package android:name="com.teamsmart.videomanager.tv" /><package android:name="com.google.android.youtube.tv" />
     </queries>
     <application android:label="Голос для Dune" android:icon="@drawable/ic_voice" android:banner="@drawable/ic_voice"
         android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false" android:usesCleartextTraffic="true">
