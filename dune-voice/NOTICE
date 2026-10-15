@@ -1,0 +1,7 @@
+Golos dlya Dune / Dune Voice
+Copyright 2026 vladikshkwok
+
+The phone application includes Vosk by Alpha Cephei Inc. and
+Java Native Access by the JNA contributors, used under Apache License 2.0.
+It includes the small Russian Vosk model 0.22 by Alpha Cephei.
+See THIRD_PARTY.md and LICENSE for component sources and license terms.

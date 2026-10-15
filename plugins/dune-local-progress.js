@@ -7,8 +7,8 @@
         'http://127.0.0.1:11080/cgi-bin/do?cmd=status&result_syntax=json'];
     var session = null, references = {}, endpoint = null, probing = false;
     var busy = false, timer = null, watchdog = null, ready = null;
-    var original = null, wrapper = null, dead = false, sequence = 0;
-    var diagnostics = {version: '1.1.0', state: 'idle', polls: 0, samples: 0, endpoint: null, last: null};
+    var original = null, wrapper = null, parseOriginal = null, parseWrapper = null, dead = false, sequence = 0;
+    var diagnostics = {version: '1.2.0', state: 'idle', polls: 0, samples: 0, endpoint: null, last: null};
 
     function now() { return Date.now(); }
     function number(value) {
@@ -38,6 +38,37 @@
             u.hash = '';
             return 'url:' + digest(u.href);
         } catch (e) { return null; }
+    }
+    // Lampa's torrent parser misses names such as "Show.S01E.01" or "S01.E01"
+    // and then gives every file of a season episode 0, i.e. one shared
+    // timeline hash: progress of one episode would show on all of them.
+    var EPISODE_RES = [/\bs(\d{1,2})[\s.\-]*e[\s.\-]*(\d{1,3})(?!\d)/i, /\b(\d{1,2})x(\d{1,3})\b/i,
+        /(?:^|[\s.\-])e(?:p|pisode)?[\s.\-]*(\d{1,3})(?!\d)/i, /(?:серия|эпизод)[\s.\-]*(\d{1,3})(?!\d)/i];
+    function episodeOf(path) {
+        var name = String(path || '').split('/').pop().replace(/\.[^.]+$/, '').replace(/_/g, ' '), i, m;
+        for (i = 0; i < EPISODE_RES.length; i++) {
+            m = name.match(EPISODE_RES[i]);
+            if (m) return m.length > 2 ? {season: parseInt(m[1], 10), episode: parseInt(m[2], 10)} : {season: null, episode: parseInt(m[1], 10)};
+        }
+        return null;
+    }
+    function fixParse(parse) {
+        return function (data) {
+            var result = parse.apply(this, arguments);
+            try {
+                var movie = data && data.movie;
+                if (!result || data.is_file || !movie || !movie.number_of_seasons || result.episode) return result;
+                var found = episodeOf(data.path), title = movie.original_title || movie.original_name || '';
+                if (found && found.episode > 0) {
+                    result.season = found.season || result.season || 1; result.episode = found.episode;
+                    result.hash_string = [result.season, result.season > 10 ? ':' : '', result.episode, title].join('');
+                } else if (Array.isArray(data.files) && data.files.length > 1) {
+                    result.hash_string = data.path; // own progress per file rather than one shared
+                } else return result;
+                result.hash = Lampa.Utils.hash(result.hash_string);
+            } catch (e) {}
+            return result;
+        };
     }
     function profile(hash) { return Number(Lampa.Timeline.view(hash).profile || 0); }
     function persist() {
@@ -173,6 +204,10 @@
     function wake() { if (session && !busy && !probing) schedule(50); }
     function init() {
         if (!Lampa.Android || !Lampa.Android.httpReq || !Lampa.Android.openPlayer || !Lampa.Timeline || !Lampa.Timeline.update) return;
+        if (Lampa.Torserver && typeof Lampa.Torserver.parse === 'function' && Lampa.Utils && Lampa.Utils.hash) {
+            parseOriginal = Lampa.Torserver.parse;
+            Lampa.Torserver.parse = parseWrapper = fixParse(parseOriginal);
+        }
         original = Lampa.Android.openPlayer;
         wrapper = function (link, data) {
             try { begin(link, data); } catch (e) { finish('error'); }
@@ -190,6 +225,7 @@
         destroy: function () {
             dead = true; clearInterval(ready); clearTimeout(timer); clearTimeout(watchdog);
             if (original && Lampa.Android.openPlayer === wrapper) Lampa.Android.openPlayer = original;
+            if (parseOriginal && Lampa.Torserver.parse === parseWrapper) Lampa.Torserver.parse = parseOriginal;
             window.removeEventListener('focus', wake); window.removeEventListener('pageshow', wake);
             document.removeEventListener('visibilitychange', wake); delete window.DuneLocalProgress;
         }

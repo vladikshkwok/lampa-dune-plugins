@@ -1,0 +1,24 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.duckdns.dunevoice.phone">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <queries><intent><action android:name="android.speech.RecognitionService" /></intent></queries>
+    <application android:label="Голос для Dune — телефон" android:icon="@drawable/ic_voice"
+        android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false" android:usesCleartextTraffic="true" android:extractNativeLibs="true">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
+        </activity>
+        <activity android:name=".TileStartActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.Dialog.NoActionBar" android:taskAffinity="org.duckdns.dunevoice.phone.tile" />
+        <service android:name=".ListeningTile" android:exported="true" android:label="Эй, Дюна" android:icon="@drawable/ic_mic" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+        <service android:name=".ListeningService" android:exported="false" android:foregroundServiceType="microphone" />
+    </application>
+</manifest>

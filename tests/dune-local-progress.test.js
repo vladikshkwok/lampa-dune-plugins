@@ -20,7 +20,12 @@ function harness(saved = {}) {
     }, Android:{
         httpReq:(params, callbacks) => requests.push({params, callbacks}),
         openPlayer:function(...args){launches.push(args); return 'opened';}
-    }};
+    }, Utils:{hash:value => 'h:' + value},
+    // Mirrors Lampa's parser for a name it cannot read: season from folder, episode 0.
+    Torserver:{parse:data => {const season = /Season.0?(\d+)/i.test(data.path) ? Number(data.path.match(/Season.0?(\d+)/i)[1]) : 1;
+        const result = {season, episode:0, serial:!!data.movie.number_of_seasons,
+            hash_string:data.is_file ? data.path : [season, '', 0, data.movie.original_title].join('')};
+        result.hash = 'h:' + result.hash_string; return result;}}};
     const eventTarget = {addEventListener:(name,fn)=>listeners[name]=fn,removeEventListener:name=>delete listeners[name]};
     const window = {appready:true, Lampa, ...eventTarget};
     const context = vm.createContext({window, Lampa, AndroidJS:{}, URL,
@@ -122,4 +127,17 @@ test('installation is idempotent and creates no requests while idle',()=>{
 test('ambiguous duplicate stream URLs cannot update the wrong timeline',()=>{
     const h=harness();const a=h.entry('101'),b=h.entry('102');h.open({...a,playlist:[b]});
     h.tick(1000);assert.equal(h.requests.length,0);assert.equal(h.updates.length,0);assert.equal(h.launches.length,1);
+});
+test('torrent episodes with Lampa-unreadable names get their own timelines',()=>{
+    const h=harness(), parse=h.Lampa.Torserver.parse, movie={number_of_seasons:8, original_title:'Game of Thrones'};
+    const dir='Игра Престолов (Game Of Thrones) UHD HDR/Season_01/';
+    const files=[1,2].map(n=>({path:dir+'Game.of.Thrones.S01E.0'+n+'.UHD.BluRay.REMUX.2160p.TrueHD.mkv'}));
+    const info=files.map(f=>parse({movie,files,filename:f.path,path:f.path}));
+    assert.deepEqual(info.map(i=>[i.season,i.episode,i.hash]),[[1,1,'h:11Game of Thrones'],[1,2,'h:12Game of Thrones']]);
+    for (const [name,season,episode] of [['Show.S02.E05.mkv',2,5],['Show 3x07 web.mkv',3,7],['Show - Серия 4.mkv',1,4],['Show.Ep.09.mkv',1,9]])
+        assert.deepEqual((({season,episode})=>[season,episode])(parse({movie,files,filename:name,path:'x/'+name})),[season,episode]);
+    const odd=['a/Pilot.mkv','a/Winter is coming.mkv'].map(path=>({path}));
+    assert.notEqual(parse({movie,files:odd,path:odd[0].path}).hash,parse({movie,files:odd,path:odd[1].path}).hash);
+    assert.equal(parse({movie:{original_title:'Film'},files,path:files[0].path}).hash,'h:10Film');
+    h.window.DuneLocalProgress.destroy();assert.equal(h.Lampa.Torserver.parse({movie,files,path:files[0].path}).episode,0);
 });

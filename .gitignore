@@ -12,3 +12,5 @@ dist/
 .pytest_cache/
 .DS_Store
 Thumbs.db
+dune-voice/build/
+dune-voice/.cache/
