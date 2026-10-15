@@ -30,6 +30,16 @@ public final class WakeGate {
         Matcher match = WAKE.matcher(value);
         return match.find() ? value.substring(match.end()).trim() : null;
     }
+    /** Same wake matcher, preserving punctuation/case/numbers in the remaining command. */
+    public static String stripOriginal(String text) {
+        if (text == null) return null;
+        Matcher wake = WAKE.matcher(normalize(text));
+        if (!wake.find()) return null;
+        int words = wake.group().trim().split(" +").length;
+        Matcher tokens = Pattern.compile("[\\p{L}\\p{N}]+").matcher(text);
+        for (int i = 0; i < words; i++) if (!tokens.find()) return null;
+        return text.substring(tokens.end()).replaceFirst("^[\\s,.!?:;—–-]+", "").trim();
+    }
     public synchronized String accept(String text, long now) {
         String value = normalize(text);
         String rest = strip(value);

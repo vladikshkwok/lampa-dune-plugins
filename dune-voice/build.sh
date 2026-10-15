@@ -43,6 +43,10 @@ kind=sys.argv[3]
 package='org.duckdns.dunevoice.'+kind
 probe='NativeProbe' if kind=='phone' else 'GatewayProbe'
 tree.getroot().append(E.Element('instrumentation',{f'{{{ns}}}name':package+'.'+probe,f'{{{ns}}}targetPackage':package}))
+if kind=='phone':
+    fixture=E.SubElement(tree.getroot().find('application'),'service',{f'{{{ns}}}name':package+'.ReplayFixture',f'{{{ns}}}exported':'true',f'{{{ns}}}permission':'android.permission.BIND_SPEECH_RECOGNITION'})
+    intent=E.SubElement(fixture,'intent-filter')
+    E.SubElement(intent,'action',{f'{{{ns}}}name':'android.speech.RecognitionService'})
 tree.write(sys.argv[2],encoding='utf-8',xml_declaration=True)
 PY
     MANIFEST="$OUT/probe-manifest.xml"

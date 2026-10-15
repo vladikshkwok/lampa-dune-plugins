@@ -15,9 +15,8 @@ import org.duckdns.dunevoice.core.*;
 
 /**
  * Vosk listens for «Эй, Дюна» all the time. A command said in the same breath
- * uses Vosk's text; after the phrase alone the system recognizer (Google on
- * most phones, much better with titles) takes the next phrase, and Vosk
- * covers for it when it is missing or fails.
+ * reuses the same audio for system recognition on Android 13+; after the phrase
+ * alone the system recognizer takes the next phrase. Vosk covers failures.
  */
 public final class ListeningService extends Service implements RecognitionListener {
     public static final String STOP = "org.duckdns.dunevoice.STOP";
@@ -33,9 +32,11 @@ public final class ListeningService extends Service implements RecognitionListen
     private Recognizer recognizer;
     private SpeechService microphone;
     private SpeechRecognizer system;
+    private ReplaySpeech refinement;
     private PowerManager.WakeLock wakeLock;
     private volatile boolean closing;
-    private boolean started, busy, systemFailed;
+    private boolean started, busy;
+    private long retrySystemAfter;
     private volatile long captureGeneration;
     private long lastCommand;
     private final Runnable checkPlayback = new Runnable() { public void run() { monitor.execute(() -> {
@@ -48,7 +49,7 @@ public final class ListeningService extends Service implements RecognitionListen
             if (!viewing.allowsMicrophone()) {
                 suspendCapture();
                 state(Boolean.TRUE.equals(sample) ? "Просмотр: микрофон выключен до выхода из плеера" : sample == null ? "Микрофон выключен: нет статуса плеера. Проверьте связь и обновление Dune." : "Микрофон выключен. Подтверждаю выход из плеера…");
-            } else if (model != null && microphone == null && system == null) resumeCapture();
+            } else if (model != null && microphone == null && system == null && refinement == null) resumeCapture();
             main.postDelayed(checkPlayback, 3000);
         });
     }); } };
@@ -110,6 +111,8 @@ public final class ListeningService extends Service implements RecognitionListen
     private boolean accepts(long generation) { return !closing && viewing.allowsMicrophone() && generation == captureGeneration; }
     private void suspendCapture() {
         ++captureGeneration; wake.reset(); live = ""; main.removeCallbacks(armedTimeout);
+        ReplaySpeech oldRefinement = refinement; refinement = null;
+        if (oldRefinement != null) oldRefinement.close();
         SpeechRecognizer oldSystem = system; system = null;
         if (oldSystem != null) { try { oldSystem.destroy(); } catch (RuntimeException ignored) {} }
         if (microphone != null) { microphone.stop(); microphone.shutdown(); microphone = null; }
@@ -120,10 +123,14 @@ public final class ListeningService extends Service implements RecognitionListen
         if (closing || !viewing.allowsMicrophone() || model == null) return;
         try {
             long generation = ++captureGeneration;
-            recognizer = new Recognizer(model, 16000.0f);
+            BufferedRecognizer buffered = new BufferedRecognizer(model);
+            recognizer = buffered;
             microphone = new SpeechService(recognizer, 16000.0f);
             RecognitionListener listener = new RecognitionListener() {
-                public void onResult(String value) { if (accepts(generation)) ListeningService.this.onResult(value); }
+                public void onResult(String value) {
+                    byte[] audio = buffered.takeAudio();
+                    if (accepts(generation)) heard(value, audio); else java.util.Arrays.fill(audio, (byte) 0);
+                }
                 public void onPartialResult(String value) { if (accepts(generation)) ListeningService.this.onPartialResult(value); }
                 public void onFinalResult(String value) { /* Never execute at shutdown. */ }
                 public void onError(Exception error) { if (accepts(generation)) ListeningService.this.onError(error); }
@@ -139,24 +146,51 @@ public final class ListeningService extends Service implements RecognitionListen
         catch (RuntimeException ignored) {}
     }
     @Override public void onResult(String hypothesis) {
-        if (closing || !viewing.allowsMicrophone() || system != null) return;
+        heard(hypothesis, new byte[0]);
+    }
+    private void heard(String hypothesis, byte[] audio) {
+        if (closing || !viewing.allowsMicrophone() || system != null || refinement != null) { java.util.Arrays.fill(audio, (byte) 0); return; }
         String text;
-        try { text = new JSONObject(hypothesis).optString("text", ""); } catch (Exception e) { return; }
+        try { text = new JSONObject(hypothesis).optString("text", ""); } catch (Exception e) { java.util.Arrays.fill(audio, (byte) 0); return; }
         if (!text.isEmpty()) live = text;
         long now = SystemClock.elapsedRealtime();
         boolean wasArmed = wake.armed(now);
         String command = wake.accept(text, now);
         if (command == null) {
+            java.util.Arrays.fill(audio, (byte) 0);
             if (wake.armed(now) && !wasArmed) armed();
             return;
         }
         main.removeCallbacks(armedTimeout);
+        if (Build.VERSION.SDK_INT >= 33 && audio.length > 0 && SearchRefinement.eligible(command) && canUseSystem()) {
+            refine(command, audio); return;
+        }
+        java.util.Arrays.fill(audio, (byte) 0);
+        recognitionSource("Встроенное распознавание");
         execute(command);
+    }
+    private boolean canUseSystem() {
+        return SystemClock.elapsedRealtime() >= retrySystemAfter && getSharedPreferences("phone", 0).getBoolean("system", true) && SpeechRecognizer.isRecognitionAvailable(this);
+    }
+    private void recognitionSource(String source) { getSharedPreferences("phone", 0).edit().putString("recognition_source", source).apply(); }
+    private void refine(String original, byte[] audio) {
+        suspendCapture();
+        long generation = captureGeneration;
+        state("Уточняю название системным распознаванием…");
+        refinement = new ReplaySpeech(this, audio, transcript -> {
+            if (!accepts(generation) || refinement == null) return;
+            refinement = null;
+            String improved = SearchRefinement.choose(original, transcript);
+            if (transcript == null) retrySystemAfter = SystemClock.elapsedRealtime() + 30000;
+            recognitionSource(transcript == null ? "Встроенное: системное уточнение недоступно" : "Системное распознавание полной фразы");
+            resumeCapture();
+            execute(improved);
+        });
     }
     /** Wake phrase alone: give the next phrase to the system recognizer if it works here. */
     private void armed() {
         buzz(60);
-        if (!systemFailed && getSharedPreferences("phone", 0).getBoolean("system", true) && SpeechRecognizer.isRecognitionAvailable(this)) {
+        if (canUseSystem()) {
             wake.reset(); startSystem(); return;
         }
         state("Слушаю команду…");
@@ -175,7 +209,7 @@ public final class ListeningService extends Service implements RecognitionListen
                     String text = choices == null || choices.isEmpty() ? "" : choices.get(0);
                     endSystem(false);
                     if (text.isEmpty()) state("Не расслышал команду. Скажите «Эй, Дюна» ещё раз.");
-                    else { live = text; execute(text); }
+                    else { recognitionSource("Системное распознавание"); live = text; execute(text); }
                 }
                 public void onError(int error) {
                     if (!accepts(generation) || system == null) return;
@@ -197,16 +231,16 @@ public final class ListeningService extends Service implements RecognitionListen
                 public void onEvent(int type, Bundle params) {}
             });
             Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU").putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true).putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU").putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
             system.startListening(intent);
         } catch (RuntimeException unavailable) {
             endSystem(true); wake.arm(SystemClock.elapsedRealtime()); state("Слушаю команду…"); main.postDelayed(armedTimeout, 8000);
         }
     }
     private void endSystem(boolean failed) {
-        if (failed) systemFailed = true; // until the next start; Vosk handles commands meanwhile
+        if (failed) retrySystemAfter = SystemClock.elapsedRealtime() + 30000;
         // Recreate the Vosk recorder and invalidate callbacks from either old recognizer.
         suspendCapture();
         resumeCapture();

@@ -40,7 +40,7 @@ public final class Commands {
         if (control.matches("домой|на главную|главная|главный экран")) return new Command("home", "");
         if (control.matches("назад|вернись|вернись назад")) return new Command("back", "");
         if (control.matches("(?:включи|разбуди)(?: дюну| dune| приставку)|проснись")) return new Command("wake", "");
-        if (control.matches("(?:выключи|выключить|усыпи)(?: дюну| dune|приставку)?|режим ожидания")) return new Command("standby", "");
+        if (control.matches("(?:выключи|выключить|усыпи)(?: дюну| dune| приставку)?|режим ожидания")) return new Command("standby", "");
         if (control.matches("(?:открой|запусти|включи)(?: приложение)? (?:лампу|лампа|lampa)")) return new Command("lampa", "");
         Command youtube = youtube(original, control);
         if (youtube != null) return youtube;

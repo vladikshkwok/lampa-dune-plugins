@@ -19,7 +19,7 @@ public final class MainActivity extends Activity {
     private Screen screen;
     private SharedPreferences prefs;
     private Button mic, searchButton, pairButton, systemButton, batteryButton, changeButton;
-    private TextView micState, live, remoteReply, searchStatus;
+    private TextView micState, live, recognitionInfo, remoteReply, searchStatus;
     private Screen.Status device;
     private Screen.Box remote, pairing, devices;
     private EditText address, code, query;
@@ -42,6 +42,7 @@ public final class MainActivity extends Activity {
         mic = Screen.roundToggle(voice, getDrawable(R.drawable.ic_mic).mutate(), v -> toggle());
         micState = voice.heading(""); micState.setGravity(Gravity.CENTER);
         live = voice.muted(""); live.setGravity(Gravity.CENTER);
+        recognitionInfo = voice.muted(""); recognitionInfo.setGravity(Gravity.CENTER);
 
         remote = r.card();
         remote.caption("Пульт");
@@ -77,7 +78,7 @@ public final class MainActivity extends Activity {
         Screen.Box settings = r.card();
         settings.caption("Настройки");
         systemButton = settings.secondary("", v -> { prefs.edit().putBoolean("system", !prefs.getBoolean("system", true)).apply(); showState(); });
-        settings.muted("Фраза «Эй, Дюна» всегда распознаётся на телефоне. Команду после паузы точнее распознаёт системный сервис (обычно Google); если он недоступен, работает встроенная модель.");
+        settings.muted("Фраза «Эй, Дюна» распознаётся на телефоне. Названия уточняет системный сервис: после паузы — с микрофона, на Android 13+ — также из уже произнесённой целиком фразы, если сервис поддерживает передачу аудио. Системный сервис может обрабатывать звук в облаке. При ошибке работает встроенная модель.");
         settings.muted("Во время фильма микрофон автоматически выключается, включая паузы и перемотки. После выхода из плеера прослушивание возвращается. Кнопки пульта работают и во время просмотра.");
         settings.secondary("Кнопка «Эй, Дюна» в шторке", v -> addTile());
         batteryButton = settings.secondary("", v -> {
@@ -198,12 +199,14 @@ public final class MainActivity extends Activity {
         String state = prefs.getString("state", "");
         micState.setText(on ? (state.isEmpty() ? "Слушаю «Эй, Дюна»" : state) : !linked ? "Подключите приставку" : state.isEmpty() || state.startsWith("Слушаю") ? "Микрофон выключен" : state);
         String heard = ListeningService.live;
+        String source = prefs.getString("recognition_source", "");
+        recognitionInfo.setText(source.isEmpty() ? "" : "Последнее распознавание: " + source);
         live.setText(on ? (!recording ? "Нажмите, чтобы выключить голосовой режим" : heard.isEmpty() ? "Нажмите, чтобы выключить" : "Слышу: " + heard) : linked ? "Нажмите, чтобы слушать «Эй, Дюна»" : "");
         remote.visible(linked);
         String name = prefs.getString("name", ""), ip = prefs.getString("address", "");
         if (linked) device.set(Screen.OK, (name.isEmpty() ? "Dune" : name) + "  ·  " + ip); else device.set(Screen.WARN, "Приставка не подключена");
         pairing.visible(!linked || showPairing); changeButton.setVisibility(linked && !showPairing ? android.view.View.VISIBLE : android.view.View.GONE);
-        systemButton.setText((prefs.getBoolean("system", true) ? "✓  " : "✗  ") + "Команда через системное распознавание");
+        systemButton.setText((prefs.getBoolean("system", true) ? "✓  " : "✗  ") + "Системное распознавание команд");
         PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
         batteryButton.setText(power.isIgnoringBatteryOptimizations(getPackageName()) ? "✓  Работа при погашенном экране разрешена" : "Разрешить работу при погашенном экране");
     }

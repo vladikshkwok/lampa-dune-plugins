@@ -14,7 +14,7 @@ def main():
             assert "assets/LICENSE" in names and "assets/NOTICE" in names
             assert "assets/wake-test.pcm" not in names
             dex = b"".join(archive.read(name) for name in names if name.endswith(".dex"))
-            for forbidden in (b"GatewayProbe", b"NativeProbe", b"DiscoveryProbe", b"192.168.3.1", b"192.168.2.116", b"dune.vladikshk.duckdns.org"):
+            for forbidden in (b"GatewayProbe", b"NativeProbe", b"DiscoveryProbe", b"ViewingProbe", b"ReplayProbe", b"ReplayFixture", b"192.168.3.1", b"192.168.2.116", b"dune.vladikshk.duckdns.org"):
                 assert forbidden not in dex, (kind, forbidden)
             if kind == "phone":
                 assert "assets/model-ru.zip" in names

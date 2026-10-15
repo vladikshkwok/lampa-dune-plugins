@@ -12,10 +12,12 @@ import org.duckdns.dunevoice.core.WakeGate;
 public final class NativeProbe extends Instrumentation {
     private boolean discovery;
     private boolean viewing;
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); discovery = arguments != null && "true".equals(arguments.getString("discovery")); viewing = arguments != null && "true".equals(arguments.getString("viewing")); start(); }
+    private boolean replay;
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); discovery = arguments != null && "true".equals(arguments.getString("discovery")); viewing = arguments != null && "true".equals(arguments.getString("viewing")); replay = arguments != null && "true".equals(arguments.getString("replay")); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
+            if (replay) { result.putString("result", ReplayProbe.run(this)); finish(-1, result); return; }
             if (viewing) { ViewingProbe.run(this); result.putString("result", "PASS native microphone release/resume with screen off, startup during playback, unknown/paused state, manual stop; authenticated status only"); finish(-1, result); return; }
             if (discovery) { DiscoveryProbe.run(this); result.putString("result", "PASS mDNS discovery, resolved IPv4, HTTP identity validation, lifecycle cancellation; no pairing or commands"); finish(-1, result); return; }
             LibVosk.setLogLevel(LogLevel.WARNINGS);

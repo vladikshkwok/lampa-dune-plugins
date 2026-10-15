@@ -17,6 +17,7 @@ public final class CoreTest {
         command("Отмена", "cancel", "");
         command("сделай потише", "quieter", ""); command("выключи звук", "mute", "");
         command("выключи дюну", "standby", ""); command("Зелёная миля", "search", "Зелёная миля");
+        command("выключи приставку", "standby", "");
         command("открой лампу", "lampa", "");
         command("найди в ютубе котиков", "youtube", "котиков");
         command("Найди на YouTube обзор айфона", "youtube", "обзор айфона");
@@ -52,6 +53,24 @@ public final class CoreTest {
         ResultGate results = new ResultGate(); long a = results.start(); long b = results.start();
         ok(!results.claim(a)); ok(results.claim(b)); ok(!results.claim(b));
         a = results.start(); results.cancel(); ok(!results.claim(a));
+        ok("Найди Человек-паук: Враг в отражении".equals(WakeGate.stripOriginal("Эй, Дюна! Найди Человек-паук: Враг в отражении")));
+        ok("Найди «2+1»".equals(WakeGate.stripOriginal("эйдена, Найди «2+1»")));
+        ok(WakeGate.stripOriginal("Найди Дюну") == null);
+        ok(SearchRefinement.eligible("найди человека паук враг в отражениях"));
+        ok(!SearchRefinement.eligible("пауза")); ok(!SearchRefinement.eligible("открой ютуб"));
+        ok("найди Человек-паук: Враг в отражении".equals(SearchRefinement.choose("найди человека паук враг в отражениях", "Эй, Дюна, найди Человек-паук: Враг в отражении")));
+        ok("Найди Дом дракона".equals(SearchRefinement.choose("найди дом драконах", "Найди Дом дракона")));
+        ok("найди дом драконах".equals(SearchRefinement.choose("найди дом драконах", "Выключи приставку")));
+        ok("найди дом драконах".equals(SearchRefinement.choose("найди дом драконах", "Эй Дюна")));
+        ok("найди дом драконах".equals(SearchRefinement.choose("найди дом драконах", null)));
+        ok("найди в ютубе Spider-Man 2".equals(SearchRefinement.choose("найди в ютубе спайдермен два", "Эй, Дюна, найди в ютубе Spider-Man 2")));
+        PcmWindow pcm = new PcmWindow(4);
+        pcm.append(new short[]{1, 256, -32768}, 3);
+        ok(java.util.Arrays.equals(pcm.copy(0, 3), new byte[]{1, 0, 0, 1, 0, (byte) 128}));
+        pcm.append(new short[]{-1, 5, 6}, 3);
+        ok(pcm.size() == 6); ok(pcm.copy(0, 6).length == 0);
+        ok(java.util.Arrays.equals(pcm.copy(2, 6), new byte[]{0, (byte) 128, -1, -1, 5, 0, 6, 0}));
+        ok(pcm.copy(4, 7).length == 0); pcm.clear(); ok(pcm.size() == 0 && pcm.copy(0, 1).length == 0);
         ViewingGate viewing = new ViewingGate();
         ok(!viewing.allowsMicrophone()); // No brief microphone capture at startup during a film.
         viewing.sample(null, 0); ok(!viewing.allowsMicrophone());
