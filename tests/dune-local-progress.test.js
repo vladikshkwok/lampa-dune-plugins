@@ -9,9 +9,10 @@ const media = (index = 1, host = 'nas.lan:8095') => `http://${host}/stream/title
 const status = (time = 12, index = 1, extra = {}) => ({product_id:'tv184a', product_name:'Pro Vision 4K',
     protocol_version:'6', player_state:'file_playback', playback_url:media(index),
     playback_position:String(time), playback_duration:'600', ...extra});
-function harness(saved = {}) {
+function harness(saved = {}, opts = {}) {
     let clock = 1000000, next = 0, timers = new Map(), storage = new Map(Object.entries(saved)), activeProfile = 0;
-    const requests = [], updates = [], launches = [], history = new Map(), listeners = {};
+    const requests = [], updates = [], launches = [], history = new Map(), listeners = {}, shared = [];
+    const settings = {torrserver_tracktimecode:true, ...opts.settings};
     const set = (fn, delay, interval) => {const id = ++next; timers.set(id, {fn, at:clock+delay, interval}); return id;};
     const clear = id => timers.delete(id);
     const Lampa = {Timeline:{
@@ -20,14 +21,19 @@ function harness(saved = {}) {
     }, Android:{
         httpReq:(params, callbacks) => requests.push({params, callbacks}),
         openPlayer:function(...args){launches.push(args); return 'opened';}
-    }, Utils:{hash:value => 'h:' + value},
+    }, Utils:{hash:value => 'h:' + value}, Storage:{field:name => settings[name]},
     // Mirrors Lampa's parser for a name it cannot read: season from folder, episode 0.
     Torserver:{parse:data => {const season = /Season.0?(\d+)/i.test(data.path) ? Number(data.path.match(/Season.0?(\d+)/i)[1]) : 1;
         const result = {season, episode:0, serial:!!data.movie.number_of_seasons,
             hash_string:data.is_file ? data.path : [season, '', 0, data.movie.original_title].join('')};
-        result.hash = 'h:' + result.hash_string; return result;}}};
+        result.hash = 'h:' + result.hash_string; return result;},
+        url:() => opts.torrserver ?? 'http://nas.lan:8098/torrserver',
+        // Lampa's own viewedSet: POST <url>/viewed {action:'set', hash, file_index, timecode}.
+        viewedSet:opts.viewedSet === null ? undefined : (hash, file_index, timecode, ok, fail) => {
+            shared.push({action:'set', hash, file_index, timecode}); if (opts.viewedSet) opts.viewedSet();
+            assert.equal(typeof ok, 'function'); assert.equal(typeof fail, 'function');}}};
     const eventTarget = {addEventListener:(name,fn)=>listeners[name]=fn,removeEventListener:name=>delete listeners[name]};
-    const window = {appready:true, Lampa, ...eventTarget};
+    const window = {appready:true, Lampa, location:{protocol:opts.protocol || 'http:'}, ...eventTarget};
     const context = vm.createContext({window, Lampa, AndroidJS:{}, URL,
         Date:{now:()=>clock}, localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
         setTimeout:(fn,d)=>set(fn,d,0),clearTimeout:clear,setInterval:(fn,d)=>set(fn,d,d),clearInterval:clear,
@@ -51,7 +57,7 @@ function harness(saved = {}) {
         if(error)r.callbacks.error();else r.callbacks.complite(value);
         return r;
     };
-    return {window,Lampa,context,tick,entry,open,respond,requests,updates,launches,storage,history,
+    return {window,Lampa,context,tick,entry,open,respond,requests,updates,launches,storage,history,shared,settings,
         setProfile:p=>activeProfile=p,event:name=>listeners[name]?.(),clock:()=>clock};
 }
 test('launch never waits for the API and every progress request is loopback',()=>{
@@ -140,4 +146,54 @@ test('torrent episodes with Lampa-unreadable names get their own timelines',()=>
     assert.notEqual(parse({movie,files:odd,path:odd[0].path}).hash,parse({movie,files:odd,path:odd[1].path}).hash);
     assert.equal(parse({movie:{original_title:'Film'},files,path:files[0].path}).hash,'h:10Film');
     h.window.DuneLocalProgress.destroy();assert.equal(h.Lampa.Torserver.parse({movie,files,path:files[0].path}).episode,0);
+});
+const play = (h, seconds, from = 0, extra) => {for (let i = 0; i <= seconds; i++) {if (!h.requests.length) h.tick(1000); h.respond(status(from + i, 1, extra));}};
+test('TorrServer gets Lampa viewed timecode after 30 s, then every 30 s, rounded',()=>{
+    const h=harness();h.open();h.tick(50);play(h,29,100);assert.deepEqual(h.shared,[]);
+    h.tick(1000);h.respond(status(130.4));
+    assert.deepEqual(h.shared,[{action:'set',hash:HASH,file_index:1,timecode:130}]);
+    play(h,28,131);assert.equal(h.shared.length,1);h.tick(1000);h.respond(status(160.6));
+    assert.deepEqual(h.shared.map(x=>x.timecode),[130,161]);assert.equal(h.window.DuneLocalProgress.status().shared,2);
+});
+test('a seek is shared at once, including a jump back to zero',()=>{
+    const h=harness();h.open();h.tick(50);play(h,30,10);assert.deepEqual(h.shared.map(x=>x.timecode),[40]);
+    h.tick(1000);h.respond(status(500));h.tick(1000);h.respond(status(0));
+    assert.deepEqual(h.shared.map(x=>x.timecode),[40,500,0]);
+});
+test('stop shares the last real position, never the duration',()=>{
+    const h=harness();h.open();h.tick(50);play(h,5,300);
+    h.tick(1000);h.respond(status(0,1,{player_state:'navigator',playback_position:undefined,playback_duration:undefined}));
+    assert.deepEqual(h.shared,[{action:'set',hash:HASH,file_index:1,timecode:305}]);
+    assert.equal(h.updates.at(-1).time,305);
+});
+test('public token route and other file indexes map to the torrent hash and file index',()=>{
+    const h=harness({}, {torrserver:'https://lampa.example/ts-x', protocol:'https:'});
+    const data=h.entry('101',4,'lampa.example');h.open(data);h.tick(50);h.respond(status(70,4,{playback_url:data.url}));
+    h.tick(1000);h.respond(status(0,4,{player_state:'navigator',playback_url:''}));
+    assert.deepEqual(h.shared,[{action:'set',hash:HASH,file_index:4,timecode:70}]);
+});
+test('launching the next file shares the previous one before switching',()=>{
+    const h=harness();h.open(h.entry('101',1));h.tick(50);h.respond(status(42));h.open(h.entry('102',2));
+    assert.deepEqual(h.shared,[{action:'set',hash:HASH,file_index:1,timecode:42}]);
+});
+test('a restored session shares its last sample when it ends',()=>{
+    const h=harness();h.open();h.tick(50);play(h,31,100);const saved=h.storage.get(KEY);
+    const r=harness({[KEY]:saved});assert.deepEqual(r.shared,[]);
+    r.tick(50);r.respond(status(0,1,{player_state:'navigator'}));
+    assert.deepEqual(r.shared,[{action:'set',hash:HASH,file_index:1,timecode:131}]);
+});
+test('nothing is shared when tracking is off, on online URLs, mixed content or old Lampa',()=>{
+    const cases=[[{settings:{torrserver_tracktimecode:false}}],[{torrserver:''}],
+        [{protocol:'https:',torrserver:'http://192.168.3.1:8095'}],[{viewedSet:null}],[{},'https://online.example/movie.mkv']];
+    for (const [opts,url] of cases) {
+        const h=harness({},opts);const data=h.entry();if(url)data.url=url;h.open(data);h.tick(50);
+        play(h,40,0,url?{playback_url:url}:undefined);
+        h.tick(1000);h.respond(status(0,1,{player_state:'navigator'}));
+        assert.deepEqual(h.shared,[],JSON.stringify(opts));assert.equal(h.updates.at(-1).time,40);
+    }
+});
+test('a failing TorrServer write never affects local progress or polling',()=>{
+    const h=harness({}, {viewedSet:()=>{throw new Error('offline');}});h.open();h.tick(50);play(h,31,0);
+    assert.equal(h.shared.length,1);assert.equal(h.updates.at(-1).time,31);
+    h.tick(1000);assert.equal(h.requests.length,1);h.respond(status(32));assert.equal(h.updates.at(-1).time,32);
 });

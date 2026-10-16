@@ -1,4 +1,5 @@
-/* Dune HD local playback progress for Lampa Android. No external progress service. */
+/* Dune HD playback progress for Lampa Android: local Timeline plus Lampa's own TorrServer
+   timecodes (torrserver_tracktimecode). No accounts or external progress service. */
 (function () {
     'use strict';
     if (window.DuneLocalProgress || typeof AndroidJS === 'undefined') return;
@@ -8,7 +9,8 @@
     var session = null, references = {}, endpoint = null, probing = false;
     var busy = false, timer = null, watchdog = null, ready = null;
     var original = null, wrapper = null, parseOriginal = null, parseWrapper = null, dead = false, sequence = 0;
-    var diagnostics = {version: '1.2.0', state: 'idle', polls: 0, samples: 0, endpoint: null, last: null};
+    var diagnostics = {version: '1.3.0', state: 'idle', polls: 0, samples: 0, endpoint: null, last: null, shared: 0};
+    var SHARE_EVERY = 30000;
 
     function now() { return Date.now(); }
     function number(value) {
@@ -77,9 +79,31 @@
             else localStorage.removeItem(KEY);
         } catch (e) {}
     }
+    function noop() {}
+    // Same write Lampa makes when its own player closes (POST <torrserver>/viewed
+    // {action:'set', hash, file_index, timecode}); other clients read it back when
+    // they open the torrent's file list. Throttled: after 30 s of playback, then
+    // every 30 s, at once on a seek and when playback stops. Never blocks or throws.
+    function share(item, sample, force) {
+        try {
+            var m = /^torrent:([a-f\d]{40}):(\d+)$/.exec(item.key), ts = Lampa.Torserver, t = now(), w = item.shared;
+            if (!m || !ts || typeof ts.viewedSet !== 'function' || typeof ts.url !== 'function' ||
+                !Lampa.Storage || !Lampa.Storage.field('torrserver_tracktimecode')) return;
+            var base = ts.url(), page = window.location && window.location.protocol;
+            if (!base || (page === 'https:' && !/^https:/i.test(base))) return;
+            var timecode = Math.round(sample.time);
+            // The first seconds may still be the player opening at 0 before its resume seek.
+            if (!w) { item.shared = {timecode: null, at: t}; if (!force) return; w = item.shared; }
+            if (w.timecode === timecode) return;
+            if (!force && t - w.at < SHARE_EVERY &&
+                (w.timecode === null || Math.abs(timecode - w.timecode - (t - w.at) / 1000) <= 30)) return;
+            item.shared = {timecode: timecode, at: t}; diagnostics.shared++;
+            ts.viewedSet(m[1], Number(m[2]), timecode, noop, noop);
+        } catch (e) {}
+    }
     function apply(item, sample) {
         if (profile(item.hash) !== item.profile) return;
-        // Only local timeline storage/UI. Do not send plugin timecodes to cloud/TorrServer.
+        // Local timeline storage/UI; TorrServer gets its copy through share(), never cloud.
         Lampa.Timeline.update({hash: item.hash, profile: item.profile, time: sample.time,
             duration: sample.duration, percent: sample.percent, received: true});
         var ref = references[item.hash];
@@ -97,6 +121,7 @@
                     typeof i.key === 'string' && /^(torrent:[a-f\d]{40}:\d+|url:[a-f\d]{32})$/.test(i.key) &&
                     number(i.profile) !== null;
             });
+            saved.items.forEach(function (i) { delete i.shared; });
             if (!saved.items.length) return;
             session = saved;
             saved.items.forEach(function (item) {
@@ -107,7 +132,9 @@
     }
     function finish(reason) {
         if (session) {
-            session.items.forEach(function (i) { if (i.sample) apply(i, i.sample); });
+            session.items.forEach(function (i) {
+                if (i.sample) { apply(i, i.sample); share(i, i.sample, true); }
+            });
         }
         session = null; references = {}; persist(); diagnostics.state = reason || 'idle';
         clearTimeout(timer); timer = null;
@@ -163,7 +190,7 @@
             session.state = 'playing'; session.lastSeen = t; item.sample = sample;
             diagnostics.state = 'playing'; diagnostics.samples++;
             diagnostics.last = {hash: item.hash, time: time, duration: duration, percent: sample.percent};
-            persist(); apply(item, sample);
+            persist(); apply(item, sample); share(item, sample, false);
         } else if (session.state === 'playing' && status.player_state !== 'file_playback') {
             // Keep the last real sample. Stopping does not mean 100% watched.
             finish('stopped');
