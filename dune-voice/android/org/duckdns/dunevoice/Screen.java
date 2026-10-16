@@ -10,7 +10,7 @@ import android.view.*;
 import android.widget.*;
 
 /**
- * Tiny code-only UI kit shared by the TV and phone apps (no AndroidX, no XML
+ * Tiny code-only UI kit for the TV app (no AndroidX, no XML
  * layouts). Dark theme, rounded cards, and a clear focus ring on every
  * control so the TV screen is usable with a D-pad from across the room.
  */
@@ -139,26 +139,4 @@ public final class Screen {
         }
     }
 
-    /** Large round toggle used for the phone's microphone switch. */
-    public static Button roundToggle(Box box, Drawable icon, View.OnClickListener action) {
-        Screen s = box.screen;
-        Button b = new Button(s.activity); b.setOnClickListener(action); b.setStateListAnimator(null);
-        int size = s.dp(132);
-        icon.setBounds(0, 0, s.dp(56), s.dp(56)); b.setCompoundDrawables(null, icon, null, null);
-        b.setPadding(0, (size - s.dp(56)) / 2, 0, 0);
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(size, size); p.gravity = Gravity.CENTER_HORIZONTAL; p.topMargin = s.dp(8);
-        box.view.addView(b, p); return b;
-    }
-    public static void paintToggle(Screen s, Button b, boolean on) {
-        StateListDrawable list = new StateListDrawable();
-        int base = on ? ACCENT : RAISED;
-        GradientDrawable pressed = new GradientDrawable(); pressed.setShape(GradientDrawable.OVAL); pressed.setColor(blend(base, Color.BLACK, 0.2f));
-        GradientDrawable normal = new GradientDrawable(); normal.setShape(GradientDrawable.OVAL); normal.setColor(base);
-        if (on) normal.setStroke(s.dp(8), blend(ACCENT, BG, 0.55f));
-        list.addState(new int[]{android.R.attr.state_pressed}, pressed); list.addState(new int[]{}, normal);
-        b.setBackground(list);
-        b.getCompoundDrawables()[1].setTint(on ? Color.rgb(8, 20, 30) : TEXT);
-    }
-    public static final int TEXT_INPUT = InputType.TYPE_CLASS_TEXT;
-    public static ColorStateList tint(int color) { return ColorStateList.valueOf(color); }
 }
